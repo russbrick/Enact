@@ -1,0 +1,658 @@
+<!DOCTYPE html>
+
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Enact — Command Center</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Syne:wght@600;700;800&display=swap" rel="stylesheet">
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{background:#070a0f;color:#e2e8f0;font-family:'DM Mono','Courier New',monospace;min-height:100vh}
+    #root{min-height:100vh}
+    ::-webkit-scrollbar{width:4px}
+    ::-webkit-scrollbar-track{background:#0f1623}
+    ::-webkit-scrollbar-thumb{background:#1e2d40;border-radius:2px}
+    .ac{transition:all 0.18s ease;cursor:pointer}
+    .ac:hover{transform:translateY(-2px);box-shadow:0 8px 28px rgba(0,0,0,0.35)}
+    .sb{transition:all 0.15s ease;cursor:pointer;border:none}
+    .sb:hover{filter:brightness(1.2)}
+    .fb{transition:all 0.15s;cursor:pointer;border:none}
+    .fb:hover{opacity:0.85}
+    .pl{animation:pl 2s infinite}
+    @keyframes pl{0%,100%{box-shadow:0 0 0 0 rgba(34,197,94,.4)}50%{box-shadow:0 0 0 6px rgba(34,197,94,0)}}
+    .pb{animation:pb 1.5s infinite}
+    @keyframes pb{0%,100%{opacity:1}50%{opacity:.4}}
+    .gl{
+      background-image:linear-gradient(rgba(255,255,255,.02) 1px,transparent 1px),
+                       linear-gradient(90deg,rgba(255,255,255,.02) 1px,transparent 1px);
+      background-size:40px 40px
+    }
+    @keyframes fadeIn{from{opacity:0}to{opacity:1}}
+    @keyframes slideIn{from{transform:translateX(40px);opacity:0}to{transform:translateX(0);opacity:1}}
+    @keyframes gateIn{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}
+    input[type=range]{-webkit-appearance:none;height:3px;background:#1e2d40;border-radius:2px;outline:none}
+    input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;height:14px;background:#f59e0b;border-radius:50%;cursor:pointer}
+    textarea,input{color-scheme:dark}
+    .loading{display:flex;align-items:center;justify-content:center;height:100vh;font-size:12px;color:#334155;letter-spacing:0.1em}
+  </style>
+</head>
+<body>
+<div id="root"><div class="loading">LOADING ENACT COMMAND CENTER...</div></div>
+
+<script type="text/babel">
+const { useState, useMemo, useEffect, useCallback } = React;
+
+// ─── CONSTANTS ────────────────────────────────────────────────────────────────
+const PASSWORD = "enact2026";
+const LS_KEY   = "enact-agents-v2";
+const AUTH_KEY = "enact-auth";
+
+const BUILD_TASKS = {
+  Financial:     ["Set up platform OAuth / API credentials","Map platform data schema to agent inputs","Build Claude prompt with financial narrative logic","Create PDF / email output formatter","Set up weekly cron trigger","Submit to platform marketplace","Write marketplace listing copy + screenshots","Set up Stripe billing integration","QA test with 3 real accounts","Go live — monitor first 48hrs"],
+  Communication: ["Set up platform API / webhook listener","Map case/project event triggers","Build Claude prompt for client update logic","Create branded output template","Set up auto-send via email/SMS","Submit to platform marketplace","Write marketplace listing copy + screenshots","Set up Stripe billing integration","QA test with 3 real accounts","Go live — monitor first 48hrs"],
+  Deal:          ["Set up CRM API / OAuth credentials","Build deal stagnation detection logic","Build Claude prompt for follow-up intelligence","Create email/call script output format","Set up trigger cadence (48hr stagnation)","Submit to platform marketplace","Write marketplace listing copy + screenshots","Set up Stripe billing integration","QA test with 3 real accounts","Go live — monitor first 48hrs"],
+  Standalone:    ["Map platform-specific data inputs","Design agent workflow and triggers","Build Claude prompt with domain logic","Create output formatter","Set up delivery mechanism","Submit to platform marketplace","Write marketplace listing copy + screenshots","Set up Stripe billing integration","QA test with 3 real accounts","Go live — monitor first 48hrs"],
+};
+
+const DISTRIBUTION = {
+  Financial:     ["Platform App Marketplace","Partner accountant referrals","SEO landing page","AppSumo launch"],
+  Communication: ["Platform App Marketplace","Industry association partnerships","LinkedIn outreach","Conference sponsorship"],
+  Deal:          ["Platform App Marketplace","Sales community forums","LinkedIn to VPs of Sales","CRM partner consultants"],
+  Standalone:    ["Platform App Marketplace","Industry Facebook groups","Reddit communities","Direct cold outreach"],
+};
+
+const BASE_AGENTS = [
+  {id:1,  platform:"QuickBooks",     agent:"Cash Flow Narrative",      price:49,  users:7000000,  engine:"Financial",     ceiling:41000000,  priority:1},
+  {id:2,  platform:"Xero",           agent:"Cash Flow Narrative",      price:49,  users:3700000,  engine:"Financial",     ceiling:22000000,  priority:2},
+  {id:3,  platform:"FreshBooks",     agent:"Revenue Intelligence",     price:49,  users:30000000, engine:"Financial",     ceiling:176000000, priority:5},
+  {id:4,  platform:"Mailchimp",      agent:"Audience Intelligence",    price:29,  users:13000000, engine:"Financial",     ceiling:45000000,  priority:6},
+  {id:5,  platform:"Stripe",         agent:"Revenue Intelligence",     price:99,  users:5000000,  engine:"Financial",     ceiling:999000000, priority:4},
+  {id:6,  platform:"Clio",           agent:"Client Communication",     price:149, users:150000,   engine:"Communication", ceiling:27000000,  priority:8},
+  {id:7,  platform:"MyCase",         agent:"Client Communication",     price:149, users:15000,    engine:"Communication", ceiling:2700000,   priority:9},
+  {id:8,  platform:"SimplePractice", agent:"Progress Notes",           price:99,  users:200000,   engine:"Communication", ceiling:24000000,  priority:7},
+  {id:9,  platform:"Monday.com",     agent:"Client Reports",           price:149, users:225000,   engine:"Communication", ceiling:40000000,  priority:10},
+  {id:10, platform:"ClickUp",        agent:"Client Reports",           price:149, users:800000,   engine:"Communication", ceiling:143000000, priority:11},
+  {id:11, platform:"Zendesk",        agent:"Customer Health",          price:399, users:100000,   engine:"Communication", ceiling:48000000,  priority:18},
+  {id:12, platform:"HubSpot",        agent:"Proposal Follow-Up",       price:149, users:200000,   engine:"Deal",          ceiling:36000000,  priority:3},
+  {id:13, platform:"Pipedrive",      agent:"Deal Intelligence",        price:99,  users:100000,   engine:"Deal",          ceiling:12000000,  priority:12},
+  {id:14, platform:"Zoho CRM",       agent:"Deal Intelligence",        price:79,  users:750000,   engine:"Deal",          ceiling:71000000,  priority:13},
+  {id:15, platform:"DocuSign",       agent:"Unsigned Doc Follow-Up",   price:49,  users:1400000,  engine:"Deal",          ceiling:82000000,  priority:14},
+  {id:16, platform:"Salesforce",     agent:"Revenue Intelligence",     price:799, users:150000,   engine:"Deal",          ceiling:144000000, priority:17},
+  {id:17, platform:"Shopify",        agent:"Product SEO Optimizer",    price:79,  users:2000000,  engine:"Standalone",    ceiling:47000000,  priority:15},
+  {id:18, platform:"ServiceTitan",   agent:"Estimate Follow-Up",       price:299, users:100000,   engine:"Standalone",    ceiling:36000000,  priority:16},
+  {id:19, platform:"Atlassian/Jira", agent:"Engineering Intelligence", price:199, users:10000000, engine:"Standalone",    ceiling:999000000, priority:19},
+  {id:20, platform:"Klaviyo",        agent:"Revenue Intelligence",     price:199, users:100000,   engine:"Standalone",    ceiling:120000000, priority:20},
+];
+
+function initAgent(a) {
+  return {
+    ...a,
+    status:"queued",
+    activeClients:0,
+    trialClients:0,
+    pendingClients:0,
+    churnedClients:0,
+    notes:"",
+    launchDate:"",
+    marketplaceUrl:"",
+    buildTasks:(BUILD_TASKS[a.engine]||BUILD_TASKS.Standalone).map((t,i)=>({id:i,task:t,done:false})),
+  };
+}
+
+function loadAgents() {
+  try {
+    const saved = localStorage.getItem(LS_KEY);
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      // Merge saved data onto base agents (preserves new agents if added)
+      return BASE_AGENTS.map(base => {
+        const saved_agent = parsed.find(s => s.id === base.id);
+        return saved_agent ? { ...initAgent(base), ...saved_agent } : initAgent(base);
+      });
+    }
+  } catch(e) {}
+  return BASE_AGENTS.map(initAgent);
+}
+
+const EC = {
+  Financial:     {bg:"rgba(234,179,8,0.12)",  border:"rgba(234,179,8,0.4)",  dot:"#eab308", label:"#fde68a"},
+  Communication: {bg:"rgba(99,102,241,0.12)", border:"rgba(99,102,241,0.4)", dot:"#6366f1", label:"#c7d2fe"},
+  Deal:          {bg:"rgba(34,197,94,0.12)",  border:"rgba(34,197,94,0.4)",  dot:"#22c55e", label:"#bbf7d0"},
+  Standalone:    {bg:"rgba(251,146,60,0.12)", border:"rgba(251,146,60,0.4)", dot:"#fb923c", label:"#fed7aa"},
+};
+const SC = {
+  queued:   {label:"QUEUED",   color:"#64748b", bg:"rgba(100,116,139,0.15)"},
+  building: {label:"BUILDING", color:"#f59e0b", bg:"rgba(245,158,11,0.15)"},
+  testing:  {label:"TESTING",  color:"#6366f1", bg:"rgba(99,102,241,0.15)"},
+  live:     {label:"LIVE",     color:"#22c55e", bg:"rgba(34,197,94,0.15)"},
+};
+const SO = ["queued","building","testing","live"];
+
+const fmt  = n => { if(!n&&n!==0)return"$0"; if(n>=1e9)return"$"+(n/1e9).toFixed(1)+"B"; if(n>=1e6)return"$"+(n/1e6).toFixed(1)+"M"; if(n>=1e3)return"$"+(n/1e3).toFixed(0)+"K"; return"$"+n; };
+const fmtU = n => n>=1e6?(n/1e6).toFixed(1)+"M":n>=1e3?(n/1e3).toFixed(0)+"K":n;
+
+// ─── PASSWORD GATE ────────────────────────────────────────────────────────────
+function PasswordGate({ onUnlock }) {
+  const [pw, setPw] = useState("");
+  const [err, setErr] = useState(false);
+  const [shake, setShake] = useState(false);
+
+  const submit = (e) => {
+    e.preventDefault();
+    if (pw === PASSWORD) {
+      onUnlock();
+    } else {
+      setErr(true);
+      setShake(true);
+      setTimeout(() => setShake(false), 500);
+    }
+  };
+
+  return (
+    <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:"#070a0f"}}>
+      <div style={{animation:"gateIn 0.4s ease",textAlign:"center",maxWidth:360,width:"100%",padding:"0 24px"}}>
+        <div style={{width:48,height:48,background:"linear-gradient(135deg,#f59e0b,#ef4444)",borderRadius:12,display:"flex",alignItems:"center",justifyContent:"center",fontSize:22,margin:"0 auto 24px"}}>⚡</div>
+        <div style={{fontFamily:"'Syne',sans-serif",fontSize:22,fontWeight:800,color:"#f8fafc",letterSpacing:"-0.02em",marginBottom:4}}>ENACT</div>
+        <div style={{fontSize:10,color:"#475569",letterSpacing:"0.12em",marginBottom:40}}>COMMAND CENTER</div>
+        <form onSubmit={submit} style={{display:"flex",flexDirection:"column",gap:12}}>
+          <input
+            type="password"
+            placeholder="Enter access code"
+            value={pw}
+            onChange={e=>{setPw(e.target.value);setErr(false)}}
+            autoFocus
+            style={{
+              background:"rgba(255,255,255,0.04)",
+              border:`1px solid ${err?"rgba(239,68,68,0.5)":"rgba(255,255,255,0.1)"}`,
+              borderRadius:8,
+              padding:"14px 18px",
+              fontFamily:"'DM Mono',monospace",
+              fontSize:14,
+              color:"#e2e8f0",
+              outline:"none",
+              textAlign:"center",
+              letterSpacing:"0.15em",
+              transition:"border-color 0.2s",
+              transform:shake?"translateX(6px)":"none",
+            }}
+          />
+          {err && <div style={{fontSize:11,color:"#ef4444",letterSpacing:"0.08em"}}>incorrect access code</div>}
+          <button type="submit" style={{background:"#f59e0b",color:"#000",border:"none",borderRadius:8,padding:"14px",fontFamily:"'DM Mono',monospace",fontSize:12,fontWeight:500,letterSpacing:"0.1em",cursor:"pointer",textTransform:"uppercase"}}>
+            Enter →
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+// ─── HELPERS ──────────────────────────────────────────────────────────────────
+function CBtn({ onClick }) {
+  return (
+    <div style={{display:"flex",flexDirection:"column",gap:4}}>
+      <button onClick={()=>onClick(1)}  style={{width:22,height:22,background:"#1e293b",border:"1px solid rgba(255,255,255,0.1)",borderRadius:4,color:"#94a3b8",fontSize:14,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"monospace"}}>+</button>
+      <button onClick={()=>onClick(-1)} style={{width:22,height:22,background:"#1e293b",border:"1px solid rgba(255,255,255,0.1)",borderRadius:4,color:"#94a3b8",fontSize:14,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"monospace"}}>−</button>
+    </div>
+  );
+}
+
+function Sec({ label, color, children }) {
+  return (
+    <div style={{marginBottom:24}}>
+      <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:12}}>
+        <div style={{width:4,height:4,background:color,borderRadius:"50%"}}/>
+        <div style={{fontSize:9,color:"#475569",letterSpacing:"0.12em"}}>{label}</div>
+        <div style={{flex:1,height:1,background:"rgba(255,255,255,0.04)"}}/>
+      </div>
+      {children}
+    </div>
+  );
+}
+
+// ─── MODAL ────────────────────────────────────────────────────────────────────
+function Modal({ agent, onClose, onUpdate }) {
+  if (!agent) return null;
+  const c  = EC[agent.engine];
+  const sc = SC[agent.status];
+  const mrr = agent.activeClients * agent.price;
+  const doneTasks = agent.buildTasks.filter(t=>t.done).length;
+  const buildPct  = Math.round((doneTasks/agent.buildTasks.length)*100);
+  const daysLeft  = agent.launchDate ? Math.ceil((new Date(agent.launchDate)-new Date())/86400000) : null;
+  const set = (k,v) => onUpdate(agent.id,k,v);
+  const cycleStatus = () => set("status", SO[(SO.indexOf(agent.status)+1)%SO.length]);
+  const toggleTask  = id => set("buildTasks", agent.buildTasks.map(t=>t.id===id?{...t,done:!t.done}:t));
+
+  return (
+    <div onClick={onClose} style={{position:"fixed",inset:0,zIndex:1000,background:"rgba(0,0,0,0.8)",backdropFilter:"blur(8px)",display:"flex",justifyContent:"flex-end",animation:"fadeIn 0.15s ease"}}>
+      <div onClick={e=>e.stopPropagation()} style={{width:"min(660px,100vw)",height:"100vh",background:"#090d14",borderLeft:`1px solid ${c.border}`,overflowY:"auto",display:"flex",flexDirection:"column",animation:"slideIn 0.2s ease",fontFamily:"'DM Mono',monospace"}}>
+
+        {/* Header */}
+        <div style={{padding:"24px 28px 20px",borderBottom:"1px solid rgba(255,255,255,0.06)",background:c.bg,position:"sticky",top:0,zIndex:10}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
+            <div>
+              <div style={{fontSize:9,color:c.label,letterSpacing:"0.12em",marginBottom:6}}>#{agent.priority} · {agent.engine.toUpperCase()} ENGINE</div>
+              <div style={{fontFamily:"'Syne',sans-serif",fontSize:24,fontWeight:800,color:"#f8fafc",letterSpacing:"-0.02em"}}>{agent.platform}</div>
+              <div style={{fontSize:12,color:"#475569",marginTop:2}}>{agent.agent}</div>
+            </div>
+            <div style={{display:"flex",gap:8,alignItems:"center"}}>
+              <button onClick={cycleStatus} style={{padding:"6px 14px",background:sc.bg,border:`1px solid ${sc.color}40`,borderRadius:7,color:sc.color,fontSize:10,letterSpacing:"0.1em",cursor:"pointer",display:"flex",alignItems:"center",gap:6,fontFamily:"'DM Mono',monospace"}}>
+                <span style={{width:6,height:6,background:sc.color,borderRadius:"50%",display:"inline-block"}}/>{sc.label} → NEXT
+              </button>
+              <button onClick={onClose} style={{width:30,height:30,background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:7,color:"#64748b",fontSize:16,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>×</button>
+            </div>
+          </div>
+          <div style={{marginTop:18}}>
+            <div style={{display:"flex",justifyContent:"space-between",marginBottom:6}}>
+              <div style={{fontSize:9,color:"#475569",letterSpacing:"0.1em"}}>BUILD PROGRESS</div>
+              <div style={{fontSize:9,color:c.dot}}>{doneTasks}/{agent.buildTasks.length} DONE · {buildPct}%</div>
+            </div>
+            <div style={{height:5,background:"rgba(255,255,255,0.07)",borderRadius:3}}>
+              <div style={{height:"100%",width:`${buildPct}%`,background:`linear-gradient(90deg,${c.dot},${c.dot}88)`,borderRadius:3,transition:"width 0.3s ease"}}/>
+            </div>
+          </div>
+        </div>
+
+        <div style={{padding:"24px 28px",flex:1}}>
+          {/* Revenue KPIs */}
+          <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10,marginBottom:24}}>
+            {[{label:"LIVE MRR",value:fmt(mrr),color:"#22c55e"},{label:"LIVE ARR",value:fmt(mrr*12),color:"#f59e0b"},{label:"TRIAL PIPELINE",value:fmt(agent.trialClients*agent.price),color:"#6366f1"}].map((k,i)=>(
+              <div key={i} style={{background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:9,padding:"12px 14px"}}>
+                <div style={{fontSize:8,color:"#334155",letterSpacing:"0.12em",marginBottom:6}}>{k.label}</div>
+                <div style={{fontFamily:"'Syne',sans-serif",fontSize:20,fontWeight:800,color:k.color}}>{k.value}</div>
+              </div>
+            ))}
+          </div>
+
+          {/* Client Tracker */}
+          <Sec label="CLIENT TRACKER" color={c.dot}>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:10}}>
+              {[{label:"ACTIVE CLIENTS",key:"activeClients",color:"#22c55e",icon:"●"},{label:"TRIAL / FREE",key:"trialClients",color:"#6366f1",icon:"◉"},{label:"PENDING INSTALL",key:"pendingClients",color:"#f59e0b",icon:"○"},{label:"CHURNED",key:"churnedClients",color:"#ef4444",icon:"✕"}].map(({label,key,color,icon})=>(
+                <div key={key} style={{background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:8,padding:"12px 14px",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+                  <div>
+                    <div style={{fontSize:8,color:"#334155",letterSpacing:"0.1em",marginBottom:6}}>{label}</div>
+                    <div style={{display:"flex",alignItems:"center",gap:7}}>
+                      <span style={{color,fontSize:10}}>{icon}</span>
+                      <span style={{fontFamily:"'Syne',sans-serif",fontSize:22,fontWeight:800,color}}>{agent[key]}</span>
+                    </div>
+                  </div>
+                  <CBtn onClick={d=>set(key,Math.max(0,agent[key]+d))}/>
+                </div>
+              ))}
+            </div>
+            <div style={{marginTop:10,padding:"12px 14px",background:"rgba(255,255,255,0.02)",borderRadius:8,border:"1px solid rgba(255,255,255,0.05)"}}>
+              {[
+                {label:"Total Accounts",val:agent.activeClients+agent.trialClients+agent.pendingClients,color:"#f1f5f9"},
+                {label:"Conversion (trial→paid)",val:agent.trialClients>0?Math.round((agent.activeClients/(agent.activeClients+agent.trialClients))*100)+"%":"—",color:"#f59e0b"},
+                {label:"Revenue per client / yr",val:fmt(agent.price*12),color:"#22c55e"},
+              ].map(({label,val,color},i)=>(
+                <div key={i} style={{display:"flex",justifyContent:"space-between",fontSize:10,color:"#475569",marginTop:i>0?7:0}}>
+                  <span>{label}</span><span style={{color}}>{val}</span>
+                </div>
+              ))}
+            </div>
+          </Sec>
+
+          {/* Market Opportunity */}
+          <Sec label="MARKET OPPORTUNITY" color={c.dot}>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:8}}>
+              {[{label:"PLATFORM USERS",value:fmtU(agent.users),color:"#94a3b8"},{label:"MONTHLY PRICE",value:`$${agent.price}/mo`,color:"#f59e0b"},{label:"1% CEILING ARR",value:fmt(agent.ceiling),color:"#6366f1"},{label:"YOUR % TODAY",value:mrr*12>0?((mrr*12/agent.ceiling)*100).toFixed(3)+"%":"0.000%",color:c.dot}].map((m,i)=>(
+                <div key={i} style={{background:"rgba(255,255,255,0.02)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:7,padding:"10px 12px"}}>
+                  <div style={{fontSize:8,color:"#334155",letterSpacing:"0.1em",marginBottom:4}}>{m.label}</div>
+                  <div style={{fontSize:15,fontFamily:"'Syne',sans-serif",fontWeight:700,color:m.color}}>{m.value}</div>
+                </div>
+              ))}
+            </div>
+            <div style={{marginTop:10}}>
+              <div style={{display:"flex",justifyContent:"space-between",fontSize:9,color:"#334155",marginBottom:5}}>
+                <span>PROGRESS TO 1% CEILING</span>
+                <span style={{color:c.dot}}>{mrr*12>0?((mrr*12/agent.ceiling)*100).toFixed(3):0}%</span>
+              </div>
+              <div style={{height:3,background:"rgba(255,255,255,0.06)",borderRadius:2}}>
+                <div style={{height:"100%",width:`${Math.min(100,mrr*12>0?(mrr*12/agent.ceiling)*100:0)}%`,background:c.dot,borderRadius:2,transition:"width 0.3s"}}/>
+              </div>
+            </div>
+          </Sec>
+
+          {/* Distribution */}
+          <Sec label="DISTRIBUTION CHANNELS" color={c.dot}>
+            <div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:10}}>
+              {(DISTRIBUTION[agent.engine]||[]).map((ch,i)=>(
+                <div key={i} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 12px",background:"rgba(255,255,255,0.02)",border:"1px solid rgba(255,255,255,0.05)",borderRadius:6}}>
+                  <div style={{width:5,height:5,background:c.dot,borderRadius:"50%",flexShrink:0,opacity:0.7}}/>
+                  <span style={{fontSize:11,color:"#64748b"}}>{ch}</span>
+                </div>
+              ))}
+            </div>
+            <input placeholder="Paste marketplace listing URL..." value={agent.marketplaceUrl} onChange={e=>set("marketplaceUrl",e.target.value)}
+              style={{width:"100%",background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:6,padding:"8px 12px",color:"#94a3b8",fontSize:11,fontFamily:"'DM Mono',monospace",outline:"none"}}/>
+          </Sec>
+
+          {/* Build Checklist */}
+          <Sec label="BUILD CHECKLIST" color={c.dot}>
+            <div style={{display:"flex",flexDirection:"column",gap:4}}>
+              {agent.buildTasks.map((task,i)=>(
+                <div key={task.id} onClick={()=>toggleTask(task.id)}
+                  style={{display:"flex",alignItems:"center",gap:10,padding:"9px 12px",background:task.done?"rgba(34,197,94,0.06)":"rgba(255,255,255,0.02)",border:`1px solid ${task.done?"rgba(34,197,94,0.2)":"rgba(255,255,255,0.05)"}`,borderRadius:6,cursor:"pointer",transition:"all 0.15s"}}>
+                  <div style={{width:14,height:14,flexShrink:0,border:`1px solid ${task.done?"#22c55e":"#334155"}`,borderRadius:3,background:task.done?"#22c55e":"transparent",display:"flex",alignItems:"center",justifyContent:"center"}}>
+                    {task.done&&<span style={{color:"#000",fontSize:9,fontWeight:700}}>✓</span>}
+                  </div>
+                  <span style={{fontSize:11,color:task.done?"#22c55e":"#64748b",textDecoration:task.done?"line-through":"none"}}>{i+1}. {task.task}</span>
+                </div>
+              ))}
+            </div>
+          </Sec>
+
+          {/* Launch Timeline */}
+          <Sec label="LAUNCH TIMELINE" color={c.dot}>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+              <div>
+                <div style={{fontSize:9,color:"#334155",letterSpacing:"0.1em",marginBottom:6}}>TARGET LAUNCH DATE</div>
+                <input type="date" value={agent.launchDate} onChange={e=>set("launchDate",e.target.value)}
+                  style={{width:"100%",background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:6,padding:"8px 12px",color:"#94a3b8",fontSize:11,fontFamily:"'DM Mono',monospace",outline:"none",colorScheme:"dark"}}/>
+              </div>
+              <div>
+                <div style={{fontSize:9,color:"#334155",letterSpacing:"0.1em",marginBottom:6}}>DAYS TO LAUNCH</div>
+                <div style={{background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:6,padding:"8px 12px",fontFamily:"'Syne',sans-serif",fontSize:20,fontWeight:700,color:daysLeft===null?"#334155":daysLeft>0?"#f59e0b":"#22c55e"}}>
+                  {daysLeft===null?"—":daysLeft>0?daysLeft+"d":"PAST DUE"}
+                </div>
+              </div>
+            </div>
+            {agent.status==="live"&&(
+              <div style={{marginTop:10,padding:"10px 14px",background:"rgba(34,197,94,0.08)",border:"1px solid rgba(34,197,94,0.2)",borderRadius:7,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                <span style={{fontSize:11,color:"#22c55e"}}>● AGENT IS LIVE</span>
+                <span style={{fontSize:11,color:"#22c55e"}}>{fmt(mrr)}/mo · {fmt(mrr*12)}/yr</span>
+              </div>
+            )}
+          </Sec>
+
+          {/* Notes */}
+          <Sec label="EXECUTION NOTES" color={c.dot}>
+            <textarea placeholder="Blockers, next steps, partner contacts, ideas..." value={agent.notes} onChange={e=>set("notes",e.target.value)} rows={5}
+              style={{width:"100%",background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:8,padding:"12px 14px",color:"#94a3b8",fontSize:11,lineHeight:1.7,fontFamily:"'DM Mono',monospace",outline:"none",resize:"vertical"}}/>
+          </Sec>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── DASHBOARD ────────────────────────────────────────────────────────────────
+function Dashboard({ onLock }) {
+  const [agents,   setAgents]   = useState(loadAgents);
+  const [filter,   setFilter]   = useState("All");
+  const [view,     setView]     = useState("grid");
+  const [clients,  setClients]  = useState(200);
+  const [selected, setSelected] = useState(null);
+  const [saved,    setSaved]    = useState(false);
+
+  // Persist to localStorage whenever agents change
+  useEffect(() => {
+    try {
+      localStorage.setItem(LS_KEY, JSON.stringify(agents));
+      setSaved(true);
+      const t = setTimeout(()=>setSaved(false), 1500);
+      return ()=>clearTimeout(t);
+    } catch(e) {}
+  }, [agents]);
+
+  const engines  = ["All","Financial","Communication","Deal","Standalone"];
+  const filtered = useMemo(()=>filter==="All"?agents:agents.filter(a=>a.engine===filter),[agents,filter]);
+
+  const liveAgents   = agents.filter(a=>a.status==="live");
+  const inProgress   = agents.filter(a=>a.status==="building"||a.status==="testing");
+  const liveMRR      = agents.reduce((s,a)=>s+a.activeClients*a.price,0);
+  const totalClients = agents.reduce((s,a)=>s+a.activeClients,0);
+  const projARR      = agents.reduce((s,a)=>s+a.price*clients,0)*12;
+  const ceiling      = agents.reduce((s,a)=>s+a.ceiling,0);
+
+  const updateAgent = (id,k,v) => {
+    setAgents(p=>p.map(a=>a.id===id?{...a,[k]:v}:a));
+    setSelected(p=>p?.id===id?{...p,[k]:v}:p);
+  };
+
+  const cycleStatus = (id,e) => {
+    e?.stopPropagation();
+    setAgents(p=>p.map(a=>a.id!==id?a:{...a,status:SO[(SO.indexOf(a.status)+1)%SO.length]}));
+    setSelected(p=>p?.id===id?{...p,status:SO[(SO.indexOf(p.status)+1)%SO.length]}:p);
+  };
+
+  const byEngine = useMemo(()=>{
+    const m={};
+    filtered.forEach(a=>{if(!m[a.engine])m[a.engine]=[];m[a.engine].push(a);});
+    return m;
+  },[filtered]);
+
+  const engStats = useMemo(()=>
+    ["Financial","Communication","Deal","Standalone"].map(e=>{
+      const g=agents.filter(a=>a.engine===e);
+      return {engine:e,total:g.length,live:g.filter(a=>a.status==="live").length,mrr:g.reduce((s,a)=>s+a.activeClients*a.price,0)};
+    }),[agents]);
+
+  const syncedSel = selected ? agents.find(a=>a.id===selected.id)||null : null;
+
+  return (
+    <div style={{minHeight:"100vh",background:"#070a0f",color:"#e2e8f0",fontFamily:"'DM Mono','Courier New',monospace"}}>
+      {syncedSel && <Modal agent={syncedSel} onClose={()=>setSelected(null)} onUpdate={updateAgent}/>}
+
+      {/* Header */}
+      <div style={{borderBottom:"1px solid rgba(255,255,255,0.06)",padding:"20px 32px",display:"flex",alignItems:"center",justifyContent:"space-between",background:"rgba(255,255,255,0.02)",position:"sticky",top:0,zIndex:50}}>
+        <div style={{display:"flex",alignItems:"center",gap:16}}>
+          <div style={{width:36,height:36,background:"linear-gradient(135deg,#f59e0b,#ef4444)",borderRadius:8,display:"flex",alignItems:"center",justifyContent:"center",fontSize:16}}>⚡</div>
+          <div>
+            <div style={{fontFamily:"'Syne',sans-serif",fontSize:18,fontWeight:800,letterSpacing:"-0.02em",color:"#f8fafc"}}>ENACT PORTFOLIO</div>
+            <div style={{fontSize:10,color:"#475569",letterSpacing:"0.1em"}}>COMMAND CENTER · RUSS</div>
+          </div>
+        </div>
+        <div style={{display:"flex",gap:8,alignItems:"center"}}>
+          {saved&&<div style={{fontSize:9,color:"#22c55e",letterSpacing:"0.1em"}}>✓ SAVED</div>}
+          {["grid","queue"].map(v=>(
+            <button key={v} onClick={()=>setView(v)} className="fb" style={{padding:"6px 14px",background:view===v?"rgba(245,158,11,0.2)":"rgba(255,255,255,0.04)",border:`1px solid ${view===v?"rgba(245,158,11,0.5)":"rgba(255,255,255,0.08)"}`,borderRadius:6,color:view===v?"#f59e0b":"#64748b",fontSize:11,letterSpacing:"0.08em",fontFamily:"'DM Mono',monospace"}}>{v.toUpperCase()}</button>
+          ))}
+          <button onClick={onLock} className="fb" style={{padding:"6px 14px",background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:6,color:"#475569",fontSize:11,letterSpacing:"0.08em",fontFamily:"'DM Mono',monospace"}}>LOCK</button>
+        </div>
+      </div>
+
+      <div style={{padding:"28px 32px",maxWidth:1400,margin:"0 auto"}}>
+
+        {/* KPI Strip */}
+        <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:12,marginBottom:28}}>
+          {[
+            {label:"TOTAL AGENTS",  value:agents.length,     sub:`${inProgress.length} in progress`,  color:"#f8fafc"},
+            {label:"LIVE NOW",      value:liveAgents.length, sub:"generating revenue",                 color:"#22c55e"},
+            {label:"ACTIVE CLIENTS",value:totalClients,      sub:"paying subscribers",                 color:"#f59e0b"},
+            {label:"LIVE MRR",      value:fmt(liveMRR),      sub:fmt(liveMRR*12)+" ARR",              color:"#6366f1"},
+            {label:"TOTAL CEILING", value:fmt(ceiling),      sub:"at 1% penetration",                 color:"#fb923c"},
+          ].map((k,i)=>(
+            <div key={i} style={{background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:12,padding:"18px 20px",position:"relative",overflow:"hidden"}}>
+              <div style={{position:"absolute",top:0,left:0,right:0,height:2,background:`linear-gradient(90deg,${k.color}40,${k.color}00)`}}/>
+              <div style={{fontSize:9,color:"#475569",letterSpacing:"0.12em",marginBottom:8}}>{k.label}</div>
+              <div style={{fontFamily:"'Syne',sans-serif",fontSize:22,fontWeight:800,color:k.color,letterSpacing:"-0.02em"}}>{k.value}</div>
+              <div style={{fontSize:10,color:"#334155",marginTop:4}}>{k.sub}</div>
+            </div>
+          ))}
+        </div>
+
+        {/* Engine Health */}
+        <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:12,marginBottom:28}}>
+          {engStats.map(({engine,total,live,mrr})=>{
+            const c=EC[engine];
+            return (
+              <div key={engine} style={{background:c.bg,border:`1px solid ${c.border}`,borderRadius:10,padding:"14px 18px"}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+                  <div style={{fontSize:11,color:c.label,fontWeight:500,letterSpacing:"0.06em"}}>{engine.toUpperCase()}</div>
+                  <div style={{fontSize:10,color:"#475569"}}>{live}/{total}</div>
+                </div>
+                <div style={{height:3,background:"rgba(255,255,255,0.08)",borderRadius:2,marginBottom:10}}>
+                  <div style={{height:"100%",width:`${(live/total)*100}%`,background:c.dot,borderRadius:2,transition:"width 0.5s"}}/>
+                </div>
+                <div style={{fontSize:16,fontFamily:"'Syne',sans-serif",fontWeight:700,color:c.dot}}>
+                  {fmt(mrr*12)}<span style={{fontSize:10,color:"#475569",fontFamily:"'DM Mono'",fontWeight:400}}> /yr</span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Slider */}
+        <div style={{background:"rgba(255,255,255,0.02)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:10,padding:"16px 24px",marginBottom:28,display:"flex",alignItems:"center",gap:24}}>
+          <div style={{fontSize:10,color:"#475569",letterSpacing:"0.1em",whiteSpace:"nowrap"}}>PROJECTED CLIENTS / AGENT</div>
+          <input type="range" min={10} max={2000} step={10} value={clients} onChange={e=>setClients(Number(e.target.value))} style={{flex:1}}/>
+          <div style={{fontSize:20,fontFamily:"'Syne',sans-serif",fontWeight:800,color:"#f59e0b",whiteSpace:"nowrap",minWidth:50}}>{clients}</div>
+          <div style={{fontSize:11,color:"#334155",whiteSpace:"nowrap"}}>= <span style={{color:"#f8fafc"}}>{fmt(projARR)}</span> projected ARR</div>
+        </div>
+
+        {/* Filters */}
+        <div style={{display:"flex",gap:8,marginBottom:6}}>
+          {engines.map(e=>(
+            <button key={e} onClick={()=>setFilter(e)} className="fb" style={{padding:"7px 16px",background:filter===e?(EC[e]?.bg||"rgba(245,158,11,0.15)"):"rgba(255,255,255,0.03)",border:`1px solid ${filter===e?(EC[e]?.border||"rgba(245,158,11,0.4)"):"rgba(255,255,255,0.07)"}`,borderRadius:7,color:filter===e?(EC[e]?.label||"#fde68a"):"#475569",fontSize:11,letterSpacing:"0.07em",fontFamily:"'DM Mono',monospace"}}>{e.toUpperCase()}</button>
+          ))}
+        </div>
+        <div style={{fontSize:9,color:"#1e3a5f",letterSpacing:"0.08em",marginBottom:20}}>↗ DOUBLE-CLICK ANY CARD → EXECUTION DETAIL · CLICK STATUS BADGE → ADVANCE STAGE · DATA SAVES AUTOMATICALLY</div>
+
+        {/* GRID VIEW */}
+        {view==="grid"&&(
+          <div>
+            {Object.entries(byEngine).map(([engine,list])=>{
+              const c=EC[engine];
+              const eMRR=list.reduce((s,a)=>s+a.activeClients*a.price,0);
+              const eLive=list.filter(a=>a.status==="live").length;
+              return (
+                <div key={engine} style={{marginBottom:32}}>
+                  <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14}}>
+                    <div style={{width:8,height:8,background:c.dot,borderRadius:"50%"}}/>
+                    <div style={{fontSize:11,color:c.label,letterSpacing:"0.12em",fontWeight:500}}>{engine.toUpperCase()} ENGINE</div>
+                    <div style={{flex:1,height:1,background:`linear-gradient(90deg,${c.border},transparent)`}}/>
+                    <div style={{fontSize:10,color:"#334155"}}>{eLive} live · {fmt(eMRR*12)} ARR</div>
+                  </div>
+                  <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(280px,1fr))",gap:10}}>
+                    {list.map(agent=>{
+                      const sc=SC[agent.status];
+                      const isLive=agent.status==="live";
+                      const isBld=agent.status==="building";
+                      const dp=Math.round((agent.buildTasks.filter(t=>t.done).length/agent.buildTasks.length)*100);
+                      return (
+                        <div key={agent.id} className="ac gl" onDoubleClick={()=>setSelected(agent)}
+                          style={{background:isLive?"rgba(34,197,94,0.05)":"rgba(255,255,255,0.025)",border:`1px solid ${isLive?"rgba(34,197,94,0.2)":"rgba(255,255,255,0.07)"}`,borderRadius:10,padding:16,position:"relative",overflow:"hidden"}}>
+                          {isLive&&<div style={{position:"absolute",top:0,left:0,right:0,height:1,background:"linear-gradient(90deg,transparent,rgba(34,197,94,.5),transparent)"}}/>}
+                          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:12}}>
+                            <div style={{fontSize:9,background:c.bg,border:`1px solid ${c.border}`,color:c.label,padding:"3px 8px",borderRadius:4,letterSpacing:"0.08em"}}>#{agent.priority} · {engine.toUpperCase()}</div>
+                            <button onClick={e=>cycleStatus(agent.id,e)} className="sb" style={{padding:"3px 8px",background:sc.bg,borderRadius:4,color:sc.color,fontSize:9,letterSpacing:"0.1em",display:"flex",alignItems:"center",gap:5}}>
+                              <span className={isLive?"pl":isBld?"pb":""} style={{width:5,height:5,background:sc.color,borderRadius:"50%",display:"inline-block"}}/>{sc.label}
+                            </button>
+                          </div>
+                          <div style={{marginBottom:10}}>
+                            <div style={{fontFamily:"'Syne',sans-serif",fontSize:15,fontWeight:700,color:"#f1f5f9",marginBottom:3}}>{agent.platform}</div>
+                            <div style={{fontSize:11,color:"#475569"}}>{agent.agent}</div>
+                          </div>
+                          <div style={{display:"flex",gap:0,marginBottom:10,background:"rgba(255,255,255,0.03)",borderRadius:7,overflow:"hidden",border:"1px solid rgba(255,255,255,0.05)"}}>
+                            {[{label:"ACTIVE",val:agent.activeClients,color:"#22c55e"},{label:"TRIAL",val:agent.trialClients,color:"#6366f1"},{label:"PEND",val:agent.pendingClients,color:"#f59e0b"},{label:"CHRN",val:agent.churnedClients,color:"#ef4444"}].map(({label,val,color},i,arr)=>(
+                              <div key={label} style={{flex:1,textAlign:"center",padding:"7px 4px",borderRight:i<arr.length-1?"1px solid rgba(255,255,255,0.05)":"none"}}>
+                                <div style={{fontSize:7,color:"#334155",letterSpacing:"0.08em",marginBottom:3}}>{label}</div>
+                                <div style={{fontSize:14,fontFamily:"'Syne',sans-serif",fontWeight:700,color}}>{val}</div>
+                              </div>
+                            ))}
+                          </div>
+                          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,paddingTop:10,borderTop:"1px solid rgba(255,255,255,0.05)"}}>
+                            <div><div style={{fontSize:8,color:"#334155",marginBottom:3}}>PRICE</div><div style={{fontSize:13,fontWeight:500,color:"#f59e0b"}}>${agent.price}<span style={{fontSize:9,color:"#475569"}}>/mo</span></div></div>
+                            <div><div style={{fontSize:8,color:"#334155",marginBottom:3}}>LIVE MRR</div><div style={{fontSize:13,color:agent.activeClients>0?"#22c55e":"#334155"}}>{fmt(agent.activeClients*agent.price)}</div></div>
+                            <div><div style={{fontSize:8,color:"#334155",marginBottom:3}}>CEILING</div><div style={{fontSize:13,color:"#6366f1"}}>{fmt(agent.ceiling)}</div></div>
+                          </div>
+                          <div style={{marginTop:10}}>
+                            <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
+                              <div style={{fontSize:8,color:"#1e293b"}}>BUILD</div>
+                              <div style={{fontSize:8,color:dp===100?"#22c55e":"#334155"}}>{dp}%</div>
+                            </div>
+                            <div style={{height:2,background:"rgba(255,255,255,0.06)",borderRadius:1}}>
+                              <div style={{height:"100%",width:`${dp}%`,background:dp===100?"#22c55e":c.dot,borderRadius:1,opacity:0.7}}/>
+                            </div>
+                          </div>
+                          <div style={{marginTop:8,fontSize:8,color:"#1e2d40",textAlign:"center",letterSpacing:"0.06em"}}>DOUBLE-CLICK TO OPEN DETAIL</div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* QUEUE VIEW */}
+        {view==="queue"&&(
+          <div style={{background:"rgba(255,255,255,0.02)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:12,overflow:"hidden"}}>
+            <div style={{display:"grid",gridTemplateColumns:"36px 1.8fr 1.8fr 1fr 0.8fr 0.8fr 0.9fr 0.9fr 110px",padding:"12px 20px",borderBottom:"1px solid rgba(255,255,255,0.06)",fontSize:9,color:"#334155",letterSpacing:"0.12em"}}>
+              <div>#</div><div>PLATFORM</div><div>AGENT</div><div>ENGINE</div><div>PRICE</div><div>ACTIVE</div><div>LIVE MRR</div><div>PROJ ARR</div><div>STATUS</div>
+            </div>
+            {[...agents].sort((a,b)=>a.priority-b.priority).map((agent,i)=>{
+              const c=EC[agent.engine]; const sc=SC[agent.status];
+              const isLive=agent.status==="live"; const isBld=agent.status==="building";
+              return (
+                <div key={agent.id} onDoubleClick={()=>setSelected(agent)}
+                  style={{display:"grid",gridTemplateColumns:"36px 1.8fr 1.8fr 1fr 0.8fr 0.8fr 0.9fr 0.9fr 110px",padding:"13px 20px",borderBottom:"1px solid rgba(255,255,255,0.04)",background:isLive?"rgba(34,197,94,0.04)":i%2===0?"transparent":"rgba(255,255,255,0.01)",alignItems:"center",cursor:"pointer",transition:"background 0.15s"}}>
+                  <div style={{fontSize:11,color:"#334155"}}>{agent.priority}</div>
+                  <div style={{fontFamily:"'Syne',sans-serif",fontSize:13,fontWeight:600,color:"#e2e8f0"}}>{agent.platform}</div>
+                  <div style={{fontSize:11,color:"#64748b"}}>{agent.agent}</div>
+                  <div><span style={{fontSize:9,padding:"2px 7px",background:c.bg,border:`1px solid ${c.border}`,color:c.label,borderRadius:4}}>{agent.engine.toUpperCase()}</span></div>
+                  <div style={{fontSize:13,color:"#f59e0b"}}>${agent.price}<span style={{fontSize:9,color:"#475569"}}>/mo</span></div>
+                  <div style={{fontSize:14,fontFamily:"'Syne',sans-serif",fontWeight:700,color:agent.activeClients>0?"#22c55e":"#334155"}}>{agent.activeClients}</div>
+                  <div style={{fontSize:12,color:agent.activeClients>0?"#22c55e":"#334155"}}>{fmt(agent.activeClients*agent.price)}</div>
+                  <div style={{fontSize:12,color:"#475569"}}>{fmt(agent.price*clients*12)}</div>
+                  <div>
+                    <button onClick={e=>{e.stopPropagation();cycleStatus(agent.id);}} className="sb"
+                      style={{padding:"4px 8px",background:sc.bg,borderRadius:5,color:sc.color,fontSize:9,letterSpacing:"0.08em",display:"flex",alignItems:"center",gap:5,width:96}}>
+                      <span className={isLive?"pl":isBld?"pb":""} style={{width:5,height:5,background:sc.color,borderRadius:"50%",display:"inline-block",flexShrink:0}}/>{sc.label}
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+            <div style={{padding:"16px 20px",borderTop:"1px solid rgba(255,255,255,0.08)",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+              <div style={{fontSize:9,color:"#1e293b"}}>DOUBLE-CLICK ANY ROW → EXECUTION DETAILS</div>
+              <div style={{display:"flex",gap:28}}>
+                {[{label:"LIVE MRR",val:fmt(liveMRR),color:"#22c55e"},{label:"PROJECTED ARR",val:fmt(projARR),color:"#f59e0b"},{label:"CEILING",val:fmt(ceiling),color:"#6366f1"}].map(({label,val,color})=>(
+                  <div key={label} style={{textAlign:"right"}}>
+                    <div style={{fontSize:9,color:"#334155",letterSpacing:"0.1em",marginBottom:4}}>{label}</div>
+                    <div style={{fontFamily:"'Syne',sans-serif",fontSize:20,fontWeight:800,color}}>{val}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+        <div style={{marginTop:32,padding:"16px 0",borderTop:"1px solid rgba(255,255,255,0.05)",display:"flex",justifyContent:"space-between"}}>
+          <div style={{fontSize:10,color:"#1e293b"}}>CLICK STATUS → ADVANCE · DOUBLE-CLICK → EXECUTION DETAIL · AUTO-SAVES TO BROWSER</div>
+          <div style={{fontSize:10,color:"#1e293b"}}>3 ENGINES · 20 PLATFORMS · 1 INFRASTRUCTURE</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── APP ROOT ─────────────────────────────────────────────────────────────────
+function App() {
+  const [unlocked, setUnlocked] = useState(()=> localStorage.getItem(AUTH_KEY)==="true");
+
+  const unlock = () => {
+    localStorage.setItem(AUTH_KEY, "true");
+    setUnlocked(true);
+  };
+
+  const lock = () => {
+    localStorage.removeItem(AUTH_KEY);
+    setUnlocked(false);
+  };
+
+  return unlocked ? <Dashboard onLock={lock}/> : <PasswordGate onUnlock={unlock}/>;
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+
+</body>
+</html>
